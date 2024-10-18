@@ -1,0 +1,5 @@
+homepage: "https://tagfly.io/"
+documentation: "https://docs.tagfly.io/"
+versions:
+  - sha: 5e29d9c649657ce601c3ac0b75caf3bb2caa078f
+    changeNotes: Initial release.
