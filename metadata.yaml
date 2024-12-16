@@ -1,5 +1,11 @@
 homepage: "https://tagfly.io/"
 documentation: "https://docs.tagfly.io/"
 versions:
+  # Latest version
+  - sha: 86d09f2d664b97e4f7cc5645f308f123de642401
+    changeNotes: |2
+      Update description template.
+      Add tracking key.
+  # Older versions
   - sha: 55b7cf6968017467af59033bc76e09806b73b261
     changeNotes: Initial release.
