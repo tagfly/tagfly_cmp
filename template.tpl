@@ -1,4 +1,4 @@
-﻿___TERMS_OF_SERVICE___
+___TERMS_OF_SERVICE___
 
 By creating or modifying this file you agree to Google Tag Manager's Community
 Template Gallery Developer Terms of Service available at
@@ -155,25 +155,29 @@ ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 var log = require('logToConsole');
 var setDefaultConsentState = require('setDefaultConsentState');
 var updateConsentState = require('updateConsentState');
-var getCookieValues = require('getCookieValues');
-var callInWindow = require('callInWindow');
 var gtagSet = require('gtagSet');
 var makeNumber = require('makeNumber');
 var setInWindow = require('setInWindow');
 var copyFromWindow = require('copyFromWindow');
-var COOKIE_NAMES = ['_cmp_a', '_tracking_consent'];
 var localStorage = require('localStorage');
 var JSON = require('JSON');
 var Object = require('Object');
 
-var appData = copyFromWindow('tfAppData') || {};
+// Constants
+const STORAGE_KEY = 'tagfly_last_update_consent';
+const CONSENT_DENIED = 'denied';
+const CONSENT_GRANTED = 'granted';
+
+// Check if consent mode is enabled
+const appData = copyFromWindow('tfAppData') || {};
 if(!appData || !appData.gtm_config || !appData.gtm_config.is_enable_consent_mode) {
    log("CAN NOT UPDATE THE CONSENT MODE");
    return;
 }
 
-var initData = {
-  security: 'denied',
+// Initialize default data
+const initData = {
+  security: CONSENT_DENIED,
   analytics: data.analytics,
   marketing: data.marketing,
   functionality: data.functionality,
@@ -182,79 +186,113 @@ var initData = {
   urlPassthrough: data.urlPassthrough || false,
 };
 
-const parseCookie = (cookieValue) => {
-  if(!cookieValue) return null;
-  return JSON.parse(cookieValue).purposes;
+// Utility functions
+const parseStoredConsent = (stored) => {
+  if (!stored) return null;
+  return JSON.parse(stored);
 };
 
-var getConsentValues = function() {
-  for (var i = 0; i < COOKIE_NAMES.length; i++) {
-    var cookieValue = parseCookie(getCookieValues(COOKIE_NAMES[i])[0]);
-    
-    if (cookieValue) {
-      const analytics = cookieValue.a;
-      const marketing = cookieValue.m;
-      const preferences = cookieValue.p;
-      
-      return {
-        security: preferences ? 'granted' : 'denied',
-        analytics: analytics ? 'granted' : 'denied',
-        marketing: marketing ? 'granted' : 'denied',
-        functionality: preferences ? 'granted' : 'denied',
-      };
-    }
-  }
+const normalizeConsentValue = (value) => value ? CONSENT_GRANTED : CONSENT_DENIED;
+
+// Core consent functions
+const getStoredConsent = () => {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  const parsed = parseStoredConsent(stored);
   
-  return false;
+  if (!parsed) return null;
+  
+  return {
+    security: normalizeConsentValue(parsed.functionality),
+    analytics: normalizeConsentValue(parsed.analytics),
+    marketing: normalizeConsentValue(parsed.marketing),
+    functionality: normalizeConsentValue(parsed.preferences),
+  };
 };
 
+const applyConsentState = (consentState) => {
+  updateConsentState({
+    security_storage: consentState.security,
+    ad_storage: consentState.marketing,
+    ad_personalization: consentState.marketing,
+    ad_user_data: consentState.marketing,
+    analytics_storage: consentState.analytics,
+    functionality_storage: consentState.functionality,
+    personalization_storage: consentState.functionality,
+  });
+  
+  gtagSet({
+    ads_data_redaction: true,
+    url_passthrough: true,
+  });
+};
 
-const updateConsent = function() {
-  const consentState = getConsentValues();
+const saveConsentToStorage = (consentState) => {
+  const storageData = {
+    analytics: consentState.analytics === CONSENT_GRANTED,
+    marketing: consentState.marketing === CONSENT_GRANTED,
+    functionality: consentState.functionality === CONSENT_GRANTED,
+    preferences: consentState.preferences === CONSENT_GRANTED,
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(storageData));
+};
+
+// Main consent functions
+const updateConsent = () => {
+  const consentState = getStoredConsent();
   if (consentState) {
-    updateConsentState({
-      security_storage: consentState.security,
-      ad_storage: consentState.marketing,
-      ad_personalization: consentState.marketing,
-      ad_user_data: consentState.marketing,
-      analytics_storage: consentState.analytics,
-      functionality_storage: consentState.functionality,
-      personalization_storage: consentState.functionality,
-    });
-    gtagSet({
-      ads_data_redaction: true,
-      url_passthrough: true,
-    });
-    localStorage.setItem('tagfly_last_update_consent', JSON.stringify(consentState));
+    applyConsentState(consentState);
+    saveConsentToStorage(consentState);
   }
 };
-setInWindow('tagflyUpdateConsent', updateConsent, true);
 
-const isAllGranted = Object.values(getConsentValues() || {}).every(value => value === 'granted');
-if(isAllGranted) {
+const setConsentValues = (params) => {
+  if (!params) return;
+  
+  const consentState = {
+    security: params.security || CONSENT_DENIED,
+    analytics: params.analytics || CONSENT_DENIED,
+    marketing: params.marketing || CONSENT_DENIED,
+    functionality: params.functionality || params.preferences || CONSENT_DENIED,
+    preferences: params.preferences || CONSENT_DENIED,
+  };
+  
+  applyConsentState(consentState);
+  saveConsentToStorage(consentState);
+};
+
+// Expose functions globally
+setInWindow('tagflySetConsentValues', setConsentValues, true);
+
+// Check if all consents are already granted
+const currentConsent = getStoredConsent();
+if (currentConsent && Object.values(currentConsent).every(v => v === CONSENT_GRANTED)) {
   return;
 }
 
-var tagflySetDefaultConsent = function() {
+// Set default consent state
+const setDefaultConsent = () => {
   setDefaultConsentState({
-      security_storage: initData.security,
-      ad_storage: initData.marketing,
-      ad_personalization: initData.marketing,
-      ad_user_data: initData.marketing,
-      analytics_storage: initData.analytics,
-      functionality_storage: initData.functionality,
-      personalization_storage: initData.functionality
+    security_storage: initData.security,
+    ad_storage: initData.marketing,
+    ad_personalization: initData.marketing,
+    ad_user_data: initData.marketing,
+    analytics_storage: initData.analytics,
+    functionality_storage: initData.functionality,
+    personalization_storage: initData.functionality
   });
+  
   gtagSet({
-    ads_data_redaction: data.adsDataRedaction,
-    url_passthrough: data.url_passthrough,
-  });  
-  if(localStorage.getItem('tagfly_last_update_consent') === JSON.stringify(getConsentValues())) {
-   updateConsent();
+    ads_data_redaction: initData.adsDataRedaction,
+    url_passthrough: initData.urlPassthrough,
+  });
+  // Update if consent already exists
+  
+  if (currentConsent) {
+    updateConsent();
   }
 };
 
-tagflySetDefaultConsent();
+setDefaultConsent();
 data.gtmOnSuccess();
 
 
@@ -410,6 +448,45 @@ ___WEB_PERMISSIONS___
                     "boolean": true
                   }
                 ]
+              },
+              {
+                "type": 3,
+                "mapKey": [
+                  {
+                    "type": 1,
+                    "string": "key"
+                  },
+                  {
+                    "type": 1,
+                    "string": "read"
+                  },
+                  {
+                    "type": 1,
+                    "string": "write"
+                  },
+                  {
+                    "type": 1,
+                    "string": "execute"
+                  }
+                ],
+                "mapValue": [
+                  {
+                    "type": 1,
+                    "string": "tagflySetConsentValues"
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  },
+                  {
+                    "type": 8,
+                    "boolean": true
+                  }
+                ]
               }
             ]
           }
@@ -440,43 +517,6 @@ ___WEB_PERMISSIONS___
               {
                 "type": 1,
                 "string": "url_passthrough"
-              }
-            ]
-          }
-        }
-      ]
-    },
-    "clientAnnotations": {
-      "isEditedByUser": true
-    },
-    "isRequired": true
-  },
-  {
-    "instance": {
-      "key": {
-        "publicId": "get_cookies",
-        "versionId": "1"
-      },
-      "param": [
-        {
-          "key": "cookieAccess",
-          "value": {
-            "type": 1,
-            "string": "specific"
-          }
-        },
-        {
-          "key": "cookieNames",
-          "value": {
-            "type": 2,
-            "listItem": [
-              {
-                "type": 1,
-                "string": "_cmp_a"
-              },
-              {
-                "type": 1,
-                "string": "_tracking_consent"
               }
             ]
           }
@@ -821,4 +861,4 @@ scenarios: []
 
 ___NOTES___
 
-Created on 12/16/2024, 9:42:49 AM
+Created on 6/18/2025, 5:02:34 PM
